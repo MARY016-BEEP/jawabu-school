@@ -1,107 +1,41 @@
 from flask import Flask, request, jsonify
-
-from database import SessionLocal
-
-from models import Payment
-
+from database import get_engine
+from fee_allocation import auto_allocate
+from notifications import send_sms
+from audit import log_action
+from sqlalchemy import text
 
 app = Flask(__name__)
 
-
-@app.route(
-    "/mpesa/callback",
-    methods=["POST"]
-)
-
+@app.route('/callback', methods=['POST'])
 def mpesa_callback():
-
-    data = request.get_json()
-
+    data = request.json
     try:
+        stk = data['Body']['stkCallback']
+        if stk['ResultCode'] == 0:
+            meta = stk['CallbackMetadata']['Item']
+            mpesa_code = next(i['Value'] for i in meta if i['Name'] == 'MpesaReceiptNumber')
+            amount = next(i['Value'] for i in meta if i['Name'] == 'Amount')
+            phone = next(i['Value'] for i in meta if i['Name'] == 'PhoneNumber')
+            account_ref = stk['MerchantRequestID'] # Or use AccountReference you sent
 
-        callback = (
-            data["Body"]
-            ["stkCallback"]
-        )
+            # TODO: Get student balances from DB
+            # For demo: auto allocate
+            # allocation = auto_allocate(account_ref, amount, balances)
+            
+            engine = get_engine()
+            with engine.connect() as conn:
+                conn.execute(text("INSERT INTO payments (student_id, mpesa_code, amount, phone, status) VALUES (:s, :c, :a, :p, 'confirmed')"),
+                             {"s": account_ref, "c": mpesa_code, "a": amount, "p": phone})
+                conn.commit()
 
-        result_code = callback[
-            "ResultCode"
-        ]
+            send_sms(phone, f"Received KES {amount}. Mpesa Code {mpesa_code} allocated to fees. Thank you - Jawabu School.")
+            log_action("SYSTEM", "PAYMENT_CONFIRMED", mpesa_code, f"Amount {amount}")
 
-        checkout_id = callback[
-            "CheckoutRequestID"
-        ]
-
-
-        # SUCCESSFUL PAYMENT
-
-        if result_code == 0:
-
-            metadata = callback[
-                "CallbackMetadata"
-            ]["Item"]
-
-
-            mpesa_receipt = None
-
-            amount = None
-
-
-            for item in metadata:
-
-                if item["Name"] == "MpesaReceiptNumber":
-
-                    mpesa_receipt = item["Value"]
-
-
-                elif item["Name"] == "Amount":
-
-                    amount = item["Value"]
-
-
-            db = SessionLocal()
-
-
-            payment = db.query(Payment).filter(
-
-                Payment.checkout_request_id
-                == checkout_id
-
-            ).first()
-
-
-            if payment:
-
-                payment.status = "SUCCESS"
-
-                payment.mpesa_receipt = (
-                    mpesa_receipt
-                )
-
-                payment.amount = amount
-
-                db.commit()
-
-                db.close()
-
-
-        return jsonify({
-
-            "ResultCode": 0,
-
-            "ResultDesc": "Accepted"
-
-        })
-
-
+        return jsonify({"ResultCode": 0})
     except Exception as e:
-
         print(e)
+        return jsonify({"ResultCode": 1})
 
-        return jsonify({
-
-            "ResultCode": 1,
-
-            "ResultDesc": "Failed"
-
-        })
+if __name__ == '__main__':
+    app.run(port=5000)
