@@ -1,32 +1,37 @@
 import os
-from sqlalchemy import create_engine
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import create_engine, text
 from dotenv import load_dotenv
-
 load_dotenv()
 
-DATABASE_URL = os.getenv("DATABASE_URL")
+# If DATABASE_URL exists (on Streamlit Cloud) use Postgres, else use local sqlite
+DB_URL = os.getenv("DATABASE_URL", "sqlite:///jawabu.db")
+engine = create_engine(DB_URL)
 
-engine = create_engine(
-    DATABASE_URL,
-    pool_pre_ping=True
-)
+def init_db():
+    with engine.connect() as conn:
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS payments (
+            id SERIAL PRIMARY KEY,
+            student_id VARCHAR(50),
+            mpesa_code VARCHAR(20) UNIQUE,
+            amount DECIMAL,
+            phone VARCHAR(20),
+            status VARCHAR(20),
+            allocated_json TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """))
+        conn.execute(text("""
+        CREATE TABLE IF NOT EXISTS audit_logs (
+            id SERIAL PRIMARY KEY,
+            user_id VARCHAR(50),
+            action VARCHAR(100),
+            record_id VARCHAR(100),
+            details TEXT,
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+        """))
+        conn.commit()
 
-SessionLocal = sessionmaker(
-    autocommit=False,
-    autoflush=False,
-    bind=engine
-)
-
-Base = declarative_base()
-
-
-def get_db():
-
-    db = SessionLocal()
-
-    try:
-        yield db
-
-    finally:
-        db.close()
+def get_engine():
+    return engine
