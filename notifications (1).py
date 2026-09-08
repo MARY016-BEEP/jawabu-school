@@ -1,46 +1,11 @@
 import os
-
-from twilio.rest import Client
-
-from dotenv import load_dotenv
-
-
-load_dotenv()
-
-
 def send_sms(phone, message):
+    # For real SMS use Africa's Talking
+    print(f"SMS to {phone}: {message}")
+    # Implement AT API here
+    return True
 
-    account_sid = os.getenv(
-        "SMS_ACCOUNT_SID"
-    )
-
-    auth_token = os.getenv(
-        "SMS_AUTH_TOKEN"
-    )
-
-    sms_number = os.getenv(
-        "SMS_PHONE_NUMBER"
-    )
-
-
-    client = Client(
-
-        account_sid,
-
-        auth_token
-
-    )
-
-
-    message = client.messages.create(
-
-        body=message,
-
-        from_=sms_number,
-
-        to=phone
-
-    )
-
-
-    return message.sid
+def send_announcement(message):
+    # Loop all parent phones from DB and send
+    print(f"Announcement: {message}")
+    return True
