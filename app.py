@@ -14,7 +14,75 @@ init_db()
 engine = get_engine()
 
 st.set_page_config(page_title="JAWABU LEARN - Role System", layout="wide")
+# --- BABY PINK THEME - BEAUTIFUL UI ---
+st.markdown("""
+<style>
+    /* Main background - soft baby pink */
+    .stApp {
+        background-color: #FFF0F6;
+    }
+    
+    /* Sidebar - deeper baby pink */
+    [data-testid="stSidebar"] {
+        background-color: #FFD6E8 !important;
+        border-right: 2px solid #FFB6D9;
+    }
+    
+    /* All buttons - baby pink */
+    .stButton > button {
+        background-color: #FF8FAB !important;
+        color: white !important;
+        border-radius: 25px !important;
+        border: none !important;
+        font-weight: bold !important;
+        padding: 10px 25px !important;
+        box-shadow: 0px 4px 10px rgba(255, 143, 171, 0.3) !important;
+    }
+    .stButton > button:hover {
+        background-color: #FF7096 !important;
+        transform: scale(1.02);
+    }
 
+    /* Metrics cards - white with pink border */
+    [data-testid="stMetric"] {
+        background-color: white;
+        padding: 15px;
+        border-radius: 15px;
+        border-left: 5px solid #FF8FAB;
+        box-shadow: 0px 2px 8px rgba(0,0,0,0.05);
+    }
+
+    /* Tabs */
+    .stTabs [data-baseweb="tab-list"] {
+        background-color: white;
+        border-radius: 10px;
+        padding: 5px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        color: #FF7096;
+    }
+
+    /* Dataframes */
+    .stDataFrame {
+        border-radius: 15px;
+        overflow: hidden;
+    }
+
+    /* Headers - pretty */
+    h1, h2, h3 {
+        color: #C9184A !important;
+        font-family: 'Poppins', sans-serif;
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# --- PRETTY HEADER WITH LOGO ---
+st.markdown("""
+<div style="background: linear-gradient(135deg, #FF8FAB 0%, #FFB6D9 100%); padding: 20px; border-radius: 20px; margin-bottom: 20px; text-align: center; color: white;">
+    <h1 style="color: white !important; margin:0;">🌸 JAWABU LEARN 🌸</h1>
+    <p style="margin:0; font-size:16px;">Where Learning Blossoms - School Management System</p>
+</div>
+""", unsafe_allow_html=True)
 # --- SIMPLE USER DB (later you can move to database) ---
 USERS = {
     "director": {"password": "director123", "role": "director"},
