@@ -1,74 +1,21 @@
-def allocate_payment(
+# Automatically allocate payment to balances: Tuition -> Library -> Transport -> Lunch
+def auto_allocate(student_id, amount_paid, outstanding_balances):
+    """
+    outstanding_balances = {"tuition": 20000, "library": 2000, "transport": 3000}
+    """
+    allocation = {}
+    remaining = amount_paid
+    priority = ["tuition", "library", "transport", "lunch", "exam"]
 
-    payment_amount,
+    for fee_type in priority:
+        if remaining <= 0: break
+        owed = outstanding_balances.get(fee_type, 0)
+        if owed > 0:
+            pay = min(owed, remaining)
+            allocation[fee_type] = pay
+            remaining -= pay
 
-    tuition_balance,
-
-    transport_balance,
-
-    library_balance
-
-):
-
-    allocation = {
-
-        "tuition": 0,
-
-        "transport": 0,
-
-        "library": 0
-
-    }
-
-
-    # TUITION
-
-    tuition_payment = min(
-
-        payment_amount,
-
-        tuition_balance
-
-    )
-
-    allocation["tuition"] = tuition_payment
-
-    payment_amount -= tuition_payment
-
-
-    # TRANSPORT
-
-    transport_payment = min(
-
-        payment_amount,
-
-        transport_balance
-
-    )
-
-    allocation["transport"] = transport_payment
-
-    payment_amount -= transport_payment
-
-
-    # LIBRARY
-
-    library_payment = min(
-
-        payment_amount,
-
-        library_balance
-
-    )
-
-    allocation["library"] = library_payment
-
-    payment_amount -= library_payment
-
-
-    allocation["remaining_credit"] = (
-        payment_amount
-    )
-
+    if remaining > 0:
+        allocation["overpayment"] = remaining
 
     return allocation
