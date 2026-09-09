@@ -30,7 +30,7 @@ def stk_push(phone, amount, account_ref):
         "PhoneNumber": phone,
         "CallBackURL": CALLBACK_URL,
         "AccountReference": account_ref, # Student Admission No
-        "TransactionDesc": f"Fees for {account_ref}"
+        "TransactionDesc": f"JLC Fees for {admission_no}"
     }
     headers = {"Authorization": f"Bearer {token}"}
     url = "https://sandbox.safaricom.co.ke/mpesa/stkpush/v1/processrequest"
