@@ -152,12 +152,79 @@ if role == "reception":
             except Exception as e:
                 st.error(f"{e}")
 
-# ---------------- TEACHER ----------------
-elif role == "teacher":
-    st.header("Teacher - CBC Academics")
-    st.write("Teacher module working - Add marks here")
-    # Add your CBC subjects code here (same as before)
 
+# ---------------- TEACHER - CBC  ----------------
+elif role == "teacher":
+    st.header("👩‍🏫 Teacher - CBC Assessment - JAWABU LEARNING CENTER")
+
+    # CBC Subjects by Class
+    cbc_subjects = {
+        "Playgroup": ["Language", "Mathematics", "Environmental", "Psychomotor", "Religious"],
+        "PP1 & PP2": ["Language", "Mathematics", "Environmental", "Psychomotor", "Religious", "Creative"],
+        "Grade 1 to 6": ["Mathematics", "English", "Kiswahili", "Science & Tech", "Social Studies", "CRE", "Creative Arts", "Agriculture"],
+        "Grade 7 to 9": ["Mathematics", "English", "Kiswahili", "Integrated Science", "Social Studies", "CRE", "Pre-Technical", "Agriculture", "Creative Arts"]
+    }
+
+    tab1, tab2 = st.tabs(["📝 Enter Marks", "📊 View Class Performance"])
+
+    with tab1:
+        st.subheader("Enter CBC Marks")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            class_filter = st.selectbox("Select Class", ["Playgroup","PP1 & PP2","Grade 1 to 6","Grade 7 to 9"], key="t_class")
+        with col2:
+            term_filter = st.selectbox("Term", ["Term 1","Term 2","Term 3"], key="t_term")
+        with col3:
+            subject = st.selectbox("Subject", cbc_subjects[class_filter])
+
+        # Load students of that class
+        try:
+            with engine.connect() as conn:
+                students_df = pd.read_sql(text("SELECT admission_no, full_name FROM students WHERE class_group=:c AND term=:t ORDER BY full_name"), conn, params={"c": class_filter, "t": term_filter})
+
+            if students_df.empty:
+                st.warning(f"No students in {class_filter} - {term_filter}. Ask Reception to admit first.")
+            else:
+                st.write(f"Found **{len(students_df)}** students in {class_filter}")
+                student_name = st.selectbox("Select Student", students_df["full_name"].tolist())
+                adm_no = students_df[students_df["full_name"]==student_name]["admission_no"].values[0]
+
+                with st.form("marks_form"):
+                    score = st.slider("Score (%)", 0, 100, 50)
+                    grade = "EE" if score>=75 else "ME" if score>=50 else "AE" if score>=25 else "BE"
+                    st.write(f"Auto Grade: **{grade}** (EE=Exceeding, ME=Meeting, AE=Approaching, BE=Below)")
+                    comment = st.text_area("Teacher Comment")
+                    if st.form_submit_button("💾 Save Marks", type="primary"):
+                        with engine.connect() as conn:
+                            conn.execute(text("""
+                                CREATE TABLE IF NOT EXISTS cbc_grades (
+                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    admission_no TEXT, student_name TEXT, class_group TEXT,
+                                    term TEXT, subject TEXT, score INTEGER, grade TEXT, comment TEXT, date TEXT
+                                )
+                            """))
+                            conn.execute(text("""
+                                INSERT INTO cbc_grades (admission_no, student_name, class_group, term, subject, score, grade, comment, date)
+                                VALUES (:adm, :name, :cg, :term, :sub, :sc, :gr, :com, :d)
+                            """), {"adm":adm_no, "name":student_name, "cg":class_filter, "term":term_filter, "sub":subject, "sc":score, "gr":grade, "com":comment, "d": str(datetime.date.today())})
+                            conn.commit()
+                        st.success(f"✅ Saved {subject} - {student_name}: {score}% ({grade})")
+        except Exception as e:
+            st.error(f"Error: {e}")
+
+    with tab2:
+        st.subheader("Class Performance")
+        try:
+            with engine.connect() as conn:
+                df = pd.read_sql(text("SELECT * FROM cbc_grades ORDER BY date DESC"), conn)
+            if df.empty:
+                st.info("No marks entered yet")
+            else:
+                st.dataframe(df, use_container_width=True)
+                csv = df.to_csv(index=False).encode('utf-8')
+                st.download_button("📥 Download Report", csv, "cbc_report.csv", "text/csv")
+        except:
+            st.info("No grades table yet - Enter first marks in Tab 1")
 # ---------------- ACCOUNTANT ----------------
 elif role == "accountant":
     st.header("Accountant - Fee Structure & Bills")
