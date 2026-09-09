@@ -154,77 +154,149 @@ if role == "reception":
 
 
 # ---------------- TEACHER - CBC  ----------------
+# ---------------- TEACHER - CBC WITH SUBJECT TABS + TOTAL/MEAN/GRADE ----------------
 elif role == "teacher":
     st.header("👩‍🏫 Teacher - CBC Assessment - JAWABU LEARNING CENTER")
+    st.caption("CBC Curriculum: Tabs per Subject | Total Marks | Mean Score | CBC Grading (EE/ME/AE/BE)")
 
-    # CBC Subjects by Class
-    cbc_subjects = {
+    # CBC Subjects - OFFICIAL
+    CBC_SUBJECTS = {
         "Playgroup": ["Language", "Mathematics", "Environmental", "Psychomotor", "Religious"],
-        "PP1 & PP2": ["Language", "Mathematics", "Environmental", "Psychomotor", "Religious", "Creative"],
-        "Grade 1 to 6": ["Mathematics", "English", "Kiswahili", "Science & Tech", "Social Studies", "CRE", "Creative Arts", "Agriculture"],
-        "Grade 7 to 9": ["Mathematics", "English", "Kiswahili", "Integrated Science", "Social Studies", "CRE", "Pre-Technical", "Agriculture", "Creative Arts"]
+        "PP1 & PP2": ["Language", "Mathematics", "Environmental", "Psychomotor", "Religious", "Creative Arts"],
+        "Grade 1 to 6": ["Mathematics", "English", "Kiswahili", "Science & Tech", "SST", "CRE", "Creative Arts", "Agriculture"],
+        "Grade 7 to 9": ["Mathematics", "English", "Kiswahili", "Integrated Science", "Social Studies", "CRE", "Pre-Tech", "Agriculture", "Creative Arts"]
     }
 
-    tab1, tab2 = st.tabs(["📝 Enter Marks", "📊 View Class Performance"])
+    def get_cbc_grade(score):
+        if score >= 80: return "EE1" # Exceeding Expectation
+        if score >= 65: return "EE2"
+        if score >= 50: return "ME1" # Meeting Expectation
+        if score >= 35: return "ME2"
+        if score >= 20: return "AE" # Approaching
+        return "BE" # Below
 
-    with tab1:
-        st.subheader("Enter CBC Marks")
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            class_filter = st.selectbox("Select Class", ["Playgroup","PP1 & PP2","Grade 1 to 6","Grade 7 to 9"], key="t_class")
-        with col2:
-            term_filter = st.selectbox("Term", ["Term 1","Term 2","Term 3"], key="t_term")
-        with col3:
-            subject = st.selectbox("Subject", cbc_subjects[class_filter])
+    def get_mean_grade(mean):
+        if mean >= 75: return "EE - Exceeding"
+        if mean >= 50: return "ME - Meeting"
+        if mean >= 25: return "AE - Approaching"
+        return "BE - Below"
 
-        # Load students of that class
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        sel_class = st.selectbox("Class Group", list(CBC_SUBJECTS.keys()), key="cbc_class")
+    with c2:
+        sel_term = st.selectbox("Term", ["Term 1","Term 2","Term 3"], key="cbc_term")
+    with c3:
+        sel_year = st.selectbox("Year", [2025,2026], index=1)
+
+    subjects = CBC_SUBJECTS[sel_class]
+    st.info(f"**{sel_class} - {sel_term} {sel_year}** | {len(subjects)} Subjects | Grading: 80+ = EE, 50+ = ME, 20+ = AE")
+
+    # Ensure tables exist
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS cbc_grades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                admission_no TEXT, student_name TEXT, class_group TEXT,
+                term TEXT, year TEXT, subject TEXT, score INTEGER, grade TEXT
+            )
+        """))
+        conn.commit()
+
+    # Load students
+    with engine.connect() as conn:
+        students_df = pd.read_sql(text("SELECT admission_no, full_name FROM students WHERE class_group=:c AND term=:t ORDER BY full_name"), conn, params={"c": sel_class, "t": sel_term})
+
+    if students_df.empty:
+        st.error(f"❌ No students in {sel_class} - {sel_term}. Login as Reception → Admit students first in {sel_class}.")
+        st.stop()
+
+    st.success(f"✅ {len(students_df)} students loaded")
+
+    # Create TABS for each subject + Summary tab
+    tab_labels = subjects + ["📊 TOTAL / MEAN / GRADE"]
+    tabs = st.tabs(tab_labels)
+
+    # --- SUBJECT TABS ---
+    for idx, subject in enumerate(subjects):
+        with tabs[idx]:
+            st.subheader(f"{subject} - Enter Marks (0-100)")
+
+            # Load existing marks for this subject
+            with engine.connect() as conn:
+                existing = pd.read_sql(text("SELECT admission_no, score FROM cbc_grades WHERE class_group=:c AND term=:t AND year=:y AND subject=:s"),
+                                       conn, params={"c": sel_class, "t": sel_term, "y": str(sel_year), "s": subject})
+
+            # Build editable table
+            entry_df = students_df.copy()
+            entry_df["Score (0-100)"] = 0
+            entry_df["Grade"] = "BE"
+
+            if not existing.empty:
+                score_map = dict(zip(existing["admission_no"], existing["score"]))
+                entry_df["Score (0-100)"] = entry_df["admission_no"].map(score_map).fillna(0).astype(int)
+
+            entry_df["Grade"] = entry_df["Score (0-100)"].apply(get_cbc_grade)
+
+            edited = st.data_editor(
+                entry_df[["admission_no","full_name","Score (0-100)","Grade"]],
+                use_container_width=True,
+                disabled=["admission_no","full_name","Grade"],
+                key=f"editor_{subject}"
+            )
+
+            if st.button(f"💾 Save {subject} Marks", key=f"save_{subject}", type="primary", use_container_width=True):
+                with engine.connect() as conn:
+                    # Delete old for this subject
+                    conn.execute(text("DELETE FROM cbc_grades WHERE class_group=:c AND term=:t AND year=:y AND subject=:s"),
+                                 {"c": sel_class, "t": sel_term, "y": str(sel_year), "s": subject})
+                    for _, row in edited.iterrows():
+                        sc = int(row["Score (0-100)"])
+                        gr = get_cbc_grade(sc)
+                        conn.execute(text("""
+                            INSERT INTO cbc_grades (admission_no, student_name, class_group, term, year, subject, score, grade)
+                            VALUES (:adm, :name, :cg, :term, :year, :sub, :sc, :gr)
+                        """), {"adm": row["admission_no"], "name": row["full_name"], "cg": sel_class, "term": sel_term, "year": str(sel_year), "sub": subject, "sc": sc, "gr": gr})
+                    conn.commit()
+                st.success(f"✅ {subject} marks saved!")
+                st.rerun()
+
+    # --- TOTAL / MEAN / GRADE TAB ---
+    with tabs[-1]:
+        st.subheader("📊 Overall - Total, Mean & CBC Grading")
         try:
             with engine.connect() as conn:
-                students_df = pd.read_sql(text("SELECT admission_no, full_name FROM students WHERE class_group=:c AND term=:t ORDER BY full_name"), conn, params={"c": class_filter, "t": term_filter})
+                all_marks = pd.read_sql(text("SELECT admission_no, student_name, subject, score FROM cbc_grades WHERE class_group=:c AND term=:t AND year=:y"),
+                                        conn, params={"c": sel_class, "t": sel_term, "y": str(sel_year)})
 
-            if students_df.empty:
-                st.warning(f"No students in {class_filter} - {term_filter}. Ask Reception to admit first.")
+            if all_marks.empty:
+                st.info("No marks entered yet. Enter marks in subject tabs first.")
             else:
-                st.write(f"Found **{len(students_df)}** students in {class_filter}")
-                student_name = st.selectbox("Select Student", students_df["full_name"].tolist())
-                adm_no = students_df[students_df["full_name"]==student_name]["admission_no"].values[0]
+                # Pivot to get total and mean
+                pivot = all_marks.pivot_table(index=["admission_no","student_name"], columns="subject", values="score", aggfunc="max").fillna(0)
+                pivot["TOTAL"] = pivot.sum(axis=1)
+                pivot["MEAN"] = (pivot["TOTAL"] / len(subjects)).round(1)
+                pivot["GRADE"] = pivot["MEAN"].apply(get_mean_grade)
+                pivot["RANK"] = pivot["MEAN"].rank(ascending=False, method="min").astype(int)
+                pivot = pivot.sort_values("RANK")
 
-                with st.form("marks_form"):
-                    score = st.slider("Score (%)", 0, 100, 50)
-                    grade = "EE" if score>=75 else "ME" if score>=50 else "AE" if score>=25 else "BE"
-                    st.write(f"Auto Grade: **{grade}** (EE=Exceeding, ME=Meeting, AE=Approaching, BE=Below)")
-                    comment = st.text_area("Teacher Comment")
-                    if st.form_submit_button("💾 Save Marks", type="primary"):
-                        with engine.connect() as conn:
-                            conn.execute(text("""
-                                CREATE TABLE IF NOT EXISTS cbc_grades (
-                                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                                    admission_no TEXT, student_name TEXT, class_group TEXT,
-                                    term TEXT, subject TEXT, score INTEGER, grade TEXT, comment TEXT, date TEXT
-                                )
-                            """))
-                            conn.execute(text("""
-                                INSERT INTO cbc_grades (admission_no, student_name, class_group, term, subject, score, grade, comment, date)
-                                VALUES (:adm, :name, :cg, :term, :sub, :sc, :gr, :com, :d)
-                            """), {"adm":adm_no, "name":student_name, "cg":class_filter, "term":term_filter, "sub":subject, "sc":score, "gr":grade, "com":comment, "d": str(datetime.date.today())})
-                            conn.commit()
-                        st.success(f"✅ Saved {subject} - {student_name}: {score}% ({grade})")
+                # Color mean
+                def color_grade(val):
+                    if "EE" in str(val): return 'background-color: #c6efce; color: #006100; font-weight: bold'
+                    if "ME" in str(val): return 'background-color: #ffeb9c; color: #9c6500; font-weight: bold'
+                    if "AE" in str(val): return 'background-color: #ffcc99; color: #7a4a00'
+                    return 'background-color: #ffc7ce; color: #9c0006; font-weight: bold'
+
+                st.dataframe(pivot.style.applymap(color_grade, subset=["GRADE"]), use_container_width=True, height=500)
+
+                c1, c2 = st.columns(2)
+                c1.metric("Class Mean", f"{pivot['MEAN'].mean():.1f}%")
+                c1.metric("Top Student", f"{pivot.iloc[0]['MEAN']:.1f}% - {pivot.index[0][1]}")
+
+                csv = pivot.reset_index().to_csv(index=False).encode('utf-8')
+                st.download_button("📥 Download Full CBC Report (Total/Mean/Grade)", csv, f"{sel_class}_{sel_term}_CBC_Report.csv", "text/csv", type="primary", use_container_width=True)
         except Exception as e:
-            st.error(f"Error: {e}")
-
-    with tab2:
-        st.subheader("Class Performance")
-        try:
-            with engine.connect() as conn:
-                df = pd.read_sql(text("SELECT * FROM cbc_grades ORDER BY date DESC"), conn)
-            if df.empty:
-                st.info("No marks entered yet")
-            else:
-                st.dataframe(df, use_container_width=True)
-                csv = df.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 Download Report", csv, "cbc_report.csv", "text/csv")
-        except:
-            st.info("No grades table yet - Enter first marks in Tab 1")
+            st.error(f"Error loading totals: {e}")
 # ---------------- ACCOUNTANT ----------------
 elif role == "accountant":
     st.header("Accountant - Fee Structure & Bills")
