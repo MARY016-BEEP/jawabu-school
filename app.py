@@ -74,71 +74,41 @@ if st.sidebar.button("Logout"):
     st.rerun()
 
 # ---------- DIRECTOR ----------
-if role == "director":
-    st.header("Director Dashboard - Full Access")
-    with engine.connect() as conn:
-        total_in = conn.execute(text("SELECT COALESCE(SUM(amount),0) FROM payments WHERE status='confirmed'")).scalar() or 0
-        total_out = conn.execute(text("SELECT COALESCE(SUM(amount),0) FROM bills")).scalar() or 0
-        try:
-            bills_df = pd.read_sql(text("SELECT * FROM bills ORDER BY created_at DESC"), conn)
-        except:
-            bills_df = pd.DataFrame()
-        try:
-            students_df = pd.read_sql(text("SELECT * FROM students ORDER BY created_at DESC"), conn)
-        except:
-            students_df = pd.DataFrame()
-        try:
-            fee_df = pd.read_sql(text("SELECT * FROM fee_structure"), conn)
-        except:
-            fee_df = pd.DataFrame()
+if role == "DIRECTOR":
+    st.title("🏫 DIRECTOR Dashboard - JAWABU LEARNING CENTER")
+    
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🏫 Overview", "💰 Fee Collection", "🧾 Bills", "👩‍🏫 Teachers Progress", "🔍 Audit Trail"])
 
-    c1,c2,c3 = st.columns(3)
-    c1.metric("Total Fees IN", f"KES {total_in}")
-    c2.metric("Total Bills OUT", f"KES {total_out}")
-    c3.metric("Balance", f"KES {total_in - total_out}")
+    with tab1:
+        st.subheader("Overview")
+        # your overview code stays here...
 
-    st.divider()
-    st.subheader("How Money Was Used - Bills")
-    st.dataframe(bills_df, use_container_width=True)
-    st.subheader("All Admitted Students (Reception Data)")
-    st.dataframe(students_df, use_container_width=True)
-    st.subheader("Fee Structure")
-    st.dataframe(fee_df, use_container_width=True)
-   with tab5:
-        st.subheader("🔍 Audit Trail - Track Every Change in Dashboard")
-        st.info("This shows WHO edited WHAT and WHEN. For example if someone changed Mpesa code, fees, student records.")
+    with tab2:
+        st.subheader("Fee Collection")
+        # your fee code stays here...
 
+    with tab3:
+        st.subheader("Bills")
+        # your bills code stays here...
+
+    with tab4:
+        st.subheader("Teachers Progress")
+        # your teachers progress code stays here...
+
+    with tab5:
+        st.subheader("🔍 Audit Trail - Track Every Change")
+        st.info("Shows WHO edited WHAT and WHEN")
         try:
             with engine.connect() as conn:
                 audit_df = pd.read_sql(text("SELECT user_id as WHO, action as ACTION, record_id as WHAT, details as DETAILS, created_at as WHEN_TIME FROM audit_logs ORDER BY created_at DESC LIMIT 100"), conn)
-            
             if audit_df.empty:
-                st.warning("No edits yet. Audit log will start recording from now.")
+                st.warning("No edits yet. Log starts now.")
             else:
                 st.dataframe(audit_df, use_container_width=True)
-                
-                # Filter by user
-                st.divider()
-                col1, col2 = st.columns(2)
-                with col1:
-                    user_filter = st.selectbox("Filter by WHO (User)", ["All"] + audit_df['WHO'].unique().tolist())
-                with col2:
-                    action_filter = st.selectbox("Filter by ACTION", ["All", "FEE_UPDATED", "STUDENT_ADMITTED", "MARKS_ENTERED", "BILL_ADDED", "PAYMENT"])
-
-                filtered = audit_df
-                if user_filter != "All":
-                    filtered = filtered[filtered['WHO'] == user_filter]
-                if action_filter != "All":
-                    filtered = filtered[filtered['ACTION'] == action_filter]
-                
-                st.dataframe(filtered, use_container_width=True)
-                
-                # Download audit log
-                csv = filtered.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 Download Audit Report", csv, "audit_trail_jawabu_learning_center.csv", "text/csv")
-
+                csv = audit_df.to_csv(index=False).encode('utf-8')
+                st.download_button("📥 Download Audit Report", csv, "audit_trail_jlc.csv", "text/csv")
         except Exception as e:
-            st.error(f"Audit table not yet created. It will auto-create on next action. Error: {e}")
+            st.error(f"Audit table not yet created: {e}")
 
 # ---------- ACCOUNTANT ----------
 elif role == "accountant":
