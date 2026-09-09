@@ -6,3 +6,5 @@ fpdf2
 requests
 python-dotenv
 APScheduler
+fastapi
+uvicorn
