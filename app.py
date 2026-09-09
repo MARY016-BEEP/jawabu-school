@@ -261,7 +261,7 @@ else:
                 c3.metric("Overall Grade", get_grade(mean))
                 st.dataframe(marks_df, use_container_width=True)
                # --- MPESA CALLBACK - Makes parent payment auto-reflect in Accounts ---
-from streamlit.web.server.websocket_headers import _get_websocket_headers
+
 # In your main Mpesa payment button, after stk_push:
 
 # Example button you already have:
