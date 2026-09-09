@@ -87,9 +87,9 @@ st.markdown("""
 USERS = {
     "director": {"password": "director123", "role": "director"},
     "accountant": {"password": "acc123", "role": "accountant"},
+    "reception": {"password": "reception123", "role": "reception"},
     "teacher1": {"password": "teach123", "role": "teacher"},
 }
-
 if 'user' not in st.session_state:
     st.session_state.user = None
     st.session_state.role = None
@@ -159,7 +159,11 @@ if role == "director":
     st.dataframe(bills_df, use_container_width=True)
 
     st.bar_chart(bills_df.groupby("category")["amount"].sum() if not bills_df.empty else pd.DataFrame())
-
+st.divider()
+    st.subheader("👥 All Admitted Students (Reception Data)")
+    with engine.connect() as conn:
+        all_students = pd.read_sql(text("SELECT * FROM students"), conn)
+    st.dataframe(all_students, use_container_width=True)
 # ================= ACCOUNTANT VIEW =================
 elif role == "accountant":
     st.header("🧾 ACCOUNTANT - Money Flow Monitoring")
@@ -200,32 +204,146 @@ elif role == "accountant":
         with engine.connect() as conn:
             logs = pd.read_sql(text("SELECT * FROM audit_logs ORDER BY created_at DESC LIMIT 100"), conn)
         st.dataframe(logs, use_container_width=True)
+        tab1, tab2, tab3, tab4 = st.tabs(["Mpesa Flow", "Record Bills", "Fee Structure Setup", "Audit Logs"])
+
+# ... inside tab3:
+with tab3:
+    st.subheader("Set Fees per Class per Term")
+    with engine.connect() as conn:
+        df_fees = pd.read_sql(text("SELECT * FROM fee_structure ORDER BY term, class_group"), conn)
+    st.dataframe(df_fees, use_container_width=True)
+    st.write("To edit: Go to database or tell me new amounts")
 
 # ================= TEACHER VIEW =================
+# ================= TEACHER VIEW - CBC CURRICULUM =================
 elif role == "teacher":
-    st.header("👩‍🏫 TEACHER - Academics Only")
-    st.info("You can only see students, marks, and report cards. No money info.")
+    st.header("👩‍🏫 TEACHER - CBC Academics")
 
-    tab1, tab2 = st.tabs(["Students & Marks", "Generate Report Card"])
+    # CBC SUBJECTS PER CLASS - Kenya
+    CBC_SUBJECTS = {
+        "Playgroup": ["Language Activities", "Mathematical Activities", "Environmental Activities", "Psychomotor & Creative", "Religious Activities"],
+        "PP1 & PP2": ["Language Activities", "Mathematical Activities", "Environmental Activities", "Psychomotor & Creative", "Religious Activities"],
+        "Grade 1 to 6": {
+            "Grade 1": ["English", "Kiswahili", "Mathematics", "Environmental Activities", "Creative Arts", "Movement & Craft", "Religious Education"],
+            "Grade 2": ["English", "Kiswahili", "Mathematics", "Environmental Activities", "Creative Arts", "Movement & Craft", "Religious Education"],
+            "Grade 3": ["English", "Kiswahili", "Mathematics", "Environmental Activities", "Creative Arts", "Movement & Craft", "Religious Education"],
+            "Grade 4": ["English", "Kiswahili", "Mathematics", "Science & Technology", "Social Studies", "Creative Arts", "Agriculture", "Religious Education"],
+            "Grade 5": ["English", "Kiswahili", "Mathematics", "Science & Technology", "Social Studies", "Creative Arts", "Agriculture", "Religious Education"],
+            "Grade 6": ["English", "Kiswahili", "Mathematics", "Science & Technology", "Social Studies", "Creative Arts", "Agriculture", "Religious Education"],
+        },
+        "Grade 7 to 9": {
+            "Grade 7": ["English", "Kiswahili", "Mathematics", "Integrated Science", "Social Studies", "Pre-Technical Studies", "Agriculture & Nutrition", "Creative Arts & Sports", "Religious Education", "Life Skills"],
+            "Grade 8": ["English", "Kiswahili", "Mathematics", "Integrated Science", "Social Studies", "Pre-Technical Studies", "Agriculture & Nutrition", "Creative Arts & Sports", "Religious Education", "Life Skills"],
+            "Grade 9": ["English", "Kiswahili", "Mathematics", "Integrated Science", "Social Studies", "Pre-Technical Studies", "Agriculture & Nutrition", "Creative Arts & Sports", "Religious Education", "Life Skills"],
+        }
+    }
+
+    # Create marks table if not exists
+    with engine.connect() as conn:
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS marks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                admission_no VARCHAR(20),
+                class_name VARCHAR(30),
+                subject VARCHAR(50),
+                score INTEGER,
+                term VARCHAR(20),
+                teacher VARCHAR(50),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+        """))
+        conn.commit()
+
+    tab1, tab2 = st.tabs(["📝 Enter Marks Per Subject", "📊 View Report - Total & Mean"])
+
     with tab1:
-        st.write("Enter marks, attendance")
-        s_id = st.text_input("Admission No")
-        subject = st.text_input("Subject")
-        marks = st.number_input("Marks /100", 0, 100)
-        if st.button("Save Marks"):
-            st.success(f"Saved {marks} for {s_id} in {subject}")
-            log_action(user, "MARKS_ENTERED", s_id, f"{subject}:{marks}")
+        # Get students list from reception
+        with engine.connect() as conn:
+            students = pd.read_sql(text("SELECT admission_no, full_name, class_group FROM students WHERE status='admitted'"), conn)
+
+        if students.empty:
+            st.warning("No admitted students yet. Reception must admit first.")
+        else:
+            adm_list = students['admission_no'].tolist()
+            selected_adm = st.selectbox("Select Student Admission No", adm_list)
+            student_info = students[students['admission_no']==selected_adm].iloc[0]
+            st.info(f"Student: {student_info['full_name']} | Group: {student_info['class_group']}")
+
+            # Determine subjects based on class
+            if student_info['class_group'] in ["Playgroup","PP1 & PP2"]:
+                subjects = CBC_SUBJECTS[student_info['class_group']]
+            else:
+                # For Grade groups, let teacher choose exact class
+                exact_class = st.selectbox("Select Exact Class",
+                    ["Grade 1","Grade 2","Grade 3","Grade 4","Grade 5","Grade 6"] if student_info['class_group']=="Grade 1 to 6" else ["Grade 7","Grade 8","Grade 9"])
+                subjects = CBC_SUBJECTS[student_info['class_group']][exact_class]
+
+            term = st.selectbox("Term", ["Term 1","Term 2","Term 3"])
+
+            st.subheader(f"Enter Scores for {selected_adm} - {term}")
+            scores = {}
+            cols = st.columns(2)
+            for i, subj in enumerate(subjects):
+                with cols[i%2]:
+                    scores[subj] = st.number_input(f"{subj} (0-100)", 0, 100, key=f"{subj}_{selected_adm}")
+
+            if st.button("💾 Save All Marks"):
+                with engine.connect() as conn:
+                    # delete old marks for this term
+                    conn.execute(text("DELETE FROM marks WHERE admission_no=:a AND term=:t"), {"a":selected_adm,"t":term})
+                    for subj, sc in scores.items():
+                        conn.execute(text("""
+                            INSERT INTO marks (admission_no, class_name, subject, score, term, teacher)
+                            VALUES (:adm,:cls,:subj,:sc,:term,:teach)
+                        """), {"adm":selected_adm,"cls":exact_class if 'exact_class' in locals() else student_info['class_group'],"subj":subj,"sc":sc,"term":term,"teach":user})
+                    conn.commit()
+                st.success(f"Saved {len(subjects)} subjects for {selected_adm}!")
+                log_action(user, "MARKS_SAVED", selected_adm, f"{term} - {len(subjects)} subjects")
 
     with tab2:
-        s_id2 = st.text_input("Student Adm No for Report Card", key="rep")
-        if st.button("Generate PDF Report Card"):
-            pdf = FPDF()
-            pdf.add_page()
-            pdf.set_font("Arial","B",16)
-            pdf.cell(0,10,"JAWABU SCHOOL - REPORT CARD",ln=True,align="C")
-            pdf.set_font("Arial","",12)
-            pdf.cell(0,10,f"Student: {s_id2} | Date: {datetime.now().date()}",ln=True)
-            pdf.cell(0,10,f"Generated by Teacher: {user}",ln=True)
-            pdf.output("report.pdf")
-            with open("report.pdf","rb") as f:
-                st.download_button("Download Report Card", f, file_name=f"{s_id2}_report.pdf")
+        st.subheader("Report Card - Total, Mean & Grade")
+        search_adm = st.text_input("Enter Admission No to View Report", key="report_search")
+        search_term = st.selectbox("Select Term for Report", ["Term 1","Term 2","Term 3"], key="report_term")
+
+        if search_adm:
+            with engine.connect() as conn:
+                marks_df = pd.read_sql(text("SELECT subject, score FROM marks WHERE admission_no=:a AND term=:t"), conn, params={"a":search_adm,"t":search_term})
+
+            if marks_df.empty:
+                st.warning("No marks found for this student in this term")
+            else:
+                total = marks_df['score'].sum()
+                mean = total / len(marks_df)
+
+                # CBC Grading
+                def get_grade(m):
+                    if m >= 80: return "Exceeding Expectation (EE)"
+                    elif m >= 60: return "Meeting Expectation (ME)"
+                    elif m >= 40: return "Approaching Expectation (AE)"
+                    else: return "Below Expectation (BE)"
+
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Total Marks", f"{total}/{len(marks_df)*100}")
+                c2.metric("Mean Score", f"{mean:.1f}%")
+                c3.metric("Overall Grade", get_grade(mean))
+
+                st.dataframe(marks_df, use_container_width=True)
+
+                # PDF Report Card
+                if st.button("Generate Pink Report Card PDF"):
+                    pdf = FPDF()
+                    pdf.add_page()
+                    pdf.set_fill_color(255, 214, 232) # baby pink
+                    pdf.rect(0,0,210,297,'F')
+                    pdf.set_font("Arial","B",18)
+                    pdf.cell(0,15,"🌸 JAWABU LEARN - CBC REPORT CARD 🌸", ln=True, align="C")
+                    pdf.set_font("Arial","",12)
+                    pdf.cell(0,10,f"Admission: {search_adm} | Term: {search_term} | Mean: {mean:.1f}% | Grade: {get_grade(mean)}", ln=True, align="C")
+                    pdf.ln(10)
+                    for _, row in marks_df.iterrows():
+                        pdf.cell(0,8,f"{row['subject']}: {row['score']}/100", ln=True)
+                    pdf.ln(5)
+                    pdf.cell(0,10,f"TOTAL: {total} | MEAN: {mean:.1f}", ln=True)
+                    pdf.output("cbc_report.pdf")
+                    with open("cbc_report.pdf","rb") as f:
+                        st.download_button("📥 Download CBC Report Card", f, file_name=f"{search_adm}_{search_term}_Report.pdf")
