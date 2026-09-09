@@ -253,7 +253,7 @@ with tab1:
             st.error(f"Load error: {e}")
 
 # ---------- TEACHER - CBC ----------
-else:
+elif role == "teacher":
     st.header("Teacher - CBC Academics")
     CBC_SUBJECTS = {
         "Playgroup": ["Language Activities", "Mathematical Activities", "Environmental Activities", "Psychomotor & Creative", "Religious Activities"],
