@@ -29,7 +29,7 @@ def mpesa_callback():
                              {"s": account_ref, "c": mpesa_code, "a": amount, "p": phone})
                 conn.commit()
 
-            send_sms(phone, f"Received KES {amount}. Mpesa Code {mpesa_code} allocated to fees. Thank you - Jawabu School.")
+            send_sms(phone, f"Received KES {amount}. Mpesa Code {mpesa_code} allocated to fees. Thank you - Jawabu Learning Centre.")
             log_action("SYSTEM", "PAYMENT_CONFIRMED", mpesa_code, f"Amount {amount}")
 
         return jsonify({"ResultCode": 0})
