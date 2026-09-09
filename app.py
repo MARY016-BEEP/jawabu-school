@@ -104,6 +104,41 @@ if role == "director":
     st.dataframe(students_df, use_container_width=True)
     st.subheader("Fee Structure")
     st.dataframe(fee_df, use_container_width=True)
+   with tab5:
+        st.subheader("🔍 Audit Trail - Track Every Change in Dashboard")
+        st.info("This shows WHO edited WHAT and WHEN. For example if someone changed Mpesa code, fees, student records.")
+
+        try:
+            with engine.connect() as conn:
+                audit_df = pd.read_sql(text("SELECT user_id as WHO, action as ACTION, record_id as WHAT, details as DETAILS, created_at as WHEN_TIME FROM audit_logs ORDER BY created_at DESC LIMIT 100"), conn)
+            
+            if audit_df.empty:
+                st.warning("No edits yet. Audit log will start recording from now.")
+            else:
+                st.dataframe(audit_df, use_container_width=True)
+                
+                # Filter by user
+                st.divider()
+                col1, col2 = st.columns(2)
+                with col1:
+                    user_filter = st.selectbox("Filter by WHO (User)", ["All"] + audit_df['WHO'].unique().tolist())
+                with col2:
+                    action_filter = st.selectbox("Filter by ACTION", ["All", "FEE_UPDATED", "STUDENT_ADMITTED", "MARKS_ENTERED", "BILL_ADDED", "PAYMENT"])
+
+                filtered = audit_df
+                if user_filter != "All":
+                    filtered = filtered[filtered['WHO'] == user_filter]
+                if action_filter != "All":
+                    filtered = filtered[filtered['ACTION'] == action_filter]
+                
+                st.dataframe(filtered, use_container_width=True)
+                
+                # Download audit log
+                csv = filtered.to_csv(index=False).encode('utf-8')
+                st.download_button("📥 Download Audit Report", csv, "audit_trail_jawabu_learning_center.csv", "text/csv")
+
+        except Exception as e:
+            st.error(f"Audit table not yet created. It will auto-create on next action. Error: {e}")
 
 # ---------- ACCOUNTANT ----------
 elif role == "accountant":
@@ -255,3 +290,20 @@ else:
                 c2.metric("Mean Score", f"{mean:.1f}%")
                 c3.metric("Overall Grade", get_grade(mean))
                 st.dataframe(marks_df, use_container_width=True)
+               # --- MPESA CALLBACK - Makes parent payment auto-reflect in Accounts ---
+from streamlit.web.server.websocket_headers import _get_websocket_headers
+# In your main Mpesa payment button, after stk_push:
+
+# Example button you already have:
+# if st.button("Pay Fees"):
+#    response = stk_push(phone, amount, admission_no)
+#    with engine.connect() as conn:
+#        conn.execute(text("INSERT INTO payments (student_id, amount, phone, status) VALUES (:s,:a,:p,'pending')"), 
+#                     {"s":admission_no,"a":amount,"p":phone})
+#        conn.commit()
+#    st.info("Check your phone for STK Push - Enter PIN")
+
+# Then Safaricom will call your callback URL: https://yourdomain.com/callback
+# That callback should run:
+# UPDATE payments SET status='confirmed' WHERE phone=:phone AND amount=:amount
+# UPDATE students SET paid_amount = paid_amount + :amount, balance = total_fee - paid_amount WHERE admission_no=:admission_no
