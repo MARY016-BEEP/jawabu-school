@@ -21,46 +21,101 @@ def init_db():
         try:
             conn.execute(text("DROP TABLE IF EXISTS audit_logs;"))
             conn.commit()
-        except: pass
+        except:
+            pass
 
-        # Create tables
-        conn.execute(text(f"CREATE TABLE IF NOT EXISTS payments (id {id_type}, student_id VARCHAR(50), amount DECIMAL, phone VARCHAR(20), status VARCHAR(20), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
-        conn.execute(text(f"CREATE TABLE IF NOT EXISTS bills (id {id_type}, title VARCHAR(100), amount DECIMAL, category VARCHAR(50), paid_by VARCHAR(50), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
-        conn.execute(text(f"CREATE TABLE IF NOT EXISTS audit_logs (id {id_type}, user_id VARCHAR(50), action VARCHAR(50), record_id VARCHAR(50), details TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
-        conn.execute(text(f"CREATE TABLE IF NOT EXISTS fee_structure (id {id_type}, class_group VARCHAR(50), term VARCHAR(20), amount DECIMAL);"))
-        conn.execute(text(f"CREATE TABLE IF NOT EXISTS students (id {id_type}, admission_no VARCHAR(20) UNIQUE, full_name VARCHAR(100), class_group VARCHAR(50), term VARCHAR(20), parent_phone VARCHAR(20), total_fee DECIMAL, paid_amount DECIMAL DEFAULT 0, balance DECIMAL, status VARCHAR(20) DEFAULT 'pending', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
-        conn.execute(text(f"CREATE TABLE IF NOT EXISTS marks (id {id_type}, admission_no VARCHAR(20), class_name VARCHAR(30), subject VARCHAR(50), score INTEGER, term VARCHAR(20), teacher VARCHAR(50), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
+        # 1. STUDENTS TABLE - WITH NEW COLUMNS YOU ASKED
+        conn.execute(text(f"""
+            CREATE TABLE IF NOT EXISTS students (
+                id {id_type},
+                admission_no VARCHAR(50) UNIQUE,
+                full_name VARCHAR(100),
+                gender VARCHAR(10),
+                dob DATE,
+                class_group VARCHAR(50),
+                term VARCHAR(20),
+                parent_name VARCHAR(100),
+                parent_phone VARCHAR(20),
+                total_fee INTEGER DEFAULT 0,
+                paid_amount INTEGER DEFAULT 0,
+                balance INTEGER DEFAULT 0,
+                status VARCHAR(20) DEFAULT 'active',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+
+        # Try to add new columns if table already exists (migration)
+        for col_sql in [
+            "ALTER TABLE students ADD COLUMN IF NOT EXISTS gender VARCHAR(10)",
+            "ALTER TABLE students ADD COLUMN IF NOT EXISTS dob DATE",
+            "ALTER TABLE students ADD COLUMN IF NOT EXISTS parent_name VARCHAR(100)",
+            "ALTER TABLE students ADD COLUMN IF NOT EXISTS balance INTEGER DEFAULT 0"
+        ]:
+            try:
+                conn.execute(text(col_sql))
+                conn.commit()
+            except:
+                pass
+
+        # 2. PAYMENTS
+        conn.execute(text(f"""
+            CREATE TABLE IF NOT EXISTS payments (
+                id {id_type},
+                student_id VARCHAR(50),
+                amount INTEGER,
+                phone VARCHAR(20),
+                mpesa_receipt VARCHAR(100),
+                status VARCHAR(20) DEFAULT 'pending',
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+
+        # 3. FEE STRUCTURE
+        conn.execute(text(f"""
+            CREATE TABLE IF NOT EXISTS fee_structure (
+                id {id_type},
+                class_group VARCHAR(50),
+                term VARCHAR(20),
+                amount INTEGER,
+                UNIQUE(class_group, term)
+            )
+        """))
+
+        # 4. BILLS
+        conn.execute(text(f"""
+            CREATE TABLE IF NOT EXISTS bills (
+                id {id_type},
+                description VARCHAR(200),
+                amount INTEGER,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+
+        # 5. MARKS
+        conn.execute(text(f"""
+            CREATE TABLE IF NOT EXISTS marks (
+                id {id_type},
+                student_id VARCHAR(50),
+                subject VARCHAR(100),
+                term VARCHAR(20),
+                score INTEGER,
+                teacher_id VARCHAR(50),
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+
+        # 6. AUDIT LOGS
+        conn.execute(text(f"""
+            CREATE TABLE IF NOT EXISTS audit_logs (
+                id {id_type},
+                user_id VARCHAR(50),
+                action VARCHAR(100),
+                record_id VARCHAR(100),
+                details TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """))
+        
         conn.commit()
 
-        # ---- FIX FOR REPEATING FEES ----
-        # 1. Delete duplicates, keep only 1 per class+term
-        try:
-            if is_postgres:
-                conn.execute(text("""
-                    DELETE FROM fee_structure a USING fee_structure b
-                    WHERE a.id > b.id AND a.class_group = b.class_group AND a.term = b.term;
-                """))
-            else:
-                conn.execute(text("""
-                    DELETE FROM fee_structure WHERE id NOT IN (
-                        SELECT MIN(id) FROM fee_structure GROUP BY class_group, term
-                    );
-                """))
-            conn.commit()
-        except Exception as e:
-            print(f"Clean duplicates failed: {e}")
-
-        # 2. Insert ONLY if not exists
-        fees = [
-            ("Playgroup","Term 1",5000), ("PP1 & PP2","Term 1",7000), ("Grade 1 to 6","Term 1",9000), ("Grade 7 to 9","Term 1",12000),
-            ("Playgroup","Term 2",5000), ("PP1 & PP2","Term 2",7000), ("Grade 1 to 6","Term 2",9000), ("Grade 7 to 9","Term 2",12000),
-            ("Playgroup","Term 3",4000), ("PP1 & PP2","Term 3",5000), ("Grade 1 to 6","Term 3",7000), ("Grade 7 to 9","Term 3",10000),
-        ]
-        for c,t,a in fees:
-            try:
-                # Check if exists
-                exists = conn.execute(text("SELECT id FROM fee_structure WHERE class_group=:c AND term=:t"), {"c":c,"t":t}).scalar()
-                if not exists:
-                    conn.execute(text("INSERT INTO fee_structure (class_group, term, amount) VALUES (:c,:t,:a)"), {"c":c,"t":t,"a":a})
-                    conn.commit()
-            except: pass
+    return engine
