@@ -10,7 +10,7 @@ from datetime import datetime
 init_db()
 engine = get_engine()
 
-st.set_page_config(page_title="JAWABU LEARN - Pink", layout="wide")
+st.set_page_config(page_title="JAWABU LEARNING CENTRE - Pink", layout="wide")
 
 # --- BABY PINK THEME ---
 st.markdown("""
@@ -32,7 +32,7 @@ st.markdown("""
 
 st.markdown("""
 <div style="background: linear-gradient(135deg, #FF8FAB 0%, #FFB6D9 100%); padding: 20px; border-radius: 20px; margin-bottom: 20px; text-align: center; color: white;">
-    <h1 style="color: white!important; margin:0;">🌸 JAWABU LEARN 🌸</h1>
+    <h1 style="color: white!important; margin:0;">🌸 JAWABU LEARNING CENTRE 🌸</h1>
     <p style="margin:0;">Where Learning Blossoms</p>
 </div>
 """, unsafe_allow_html=True)
@@ -59,7 +59,7 @@ def login():
             log_action(u, "LOGIN", u, f"Logged in as {USERS[u]['role']}")
             st.rerun()
         else:
-            st.error("Wrong login. Try director/director123, accountant/acc123, reception/reception123, teacher1/teach123")
+            st.error("Wrong login.HINT: For director-direct, accountant-ac, reception-recept, teacher1-teach")
 
 if not st.session_state.user:
     login()
@@ -151,7 +151,7 @@ elif role == "reception":
     with st.form("admit_form"):
         name = st.text_input("Student Full Name")
         phone = st.text_input("Parent Phone 254...")
-        adm_no = st.text_input("Admission No e.g JAW/2025/001")
+        adm_no = st.text_input("Admission No e.g JLC/2025/001")
         paid_now = st.number_input("Amount Being Paid Now", min_value=0)
         submit = st.form_submit_button("Admit Student")
         if submit:
