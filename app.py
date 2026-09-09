@@ -136,46 +136,121 @@ elif role == "accountant":
         st.dataframe(df_fees, use_container_width=True)
 
 # ---------- RECEPTION ----------
-elif role == "reception":
-    st.header("Reception - Student Admission")
-    st.info("Rule: Student gets Admission Number ONLY after paying 50% of term fee")
-
-    with engine.connect() as conn:
-        fee_df = pd.read_sql(text("SELECT * FROM fee_structure"), conn)
-
-    class_choice = st.selectbox("Select Class Group", ["Playgroup","PP1 & PP2","Grade 1 to 6","Grade 7 to 9"])
-    term_choice = st.selectbox("Select Term", ["Term 1","Term 2","Term 3"])
-
-    with engine.connect() as conn:
-        total_fee = conn.execute(text("SELECT amount FROM fee_structure WHERE class_group=:c AND term=:t"), {"c":class_choice,"t":term_choice}).scalar() or 0
-
-    st.metric(f"Full Fee for {class_choice} - {term_choice}", f"KES {total_fee}")
-    min_required = total_fee * 0.5
-    st.metric("Minimum to Admit (50%)", f"KES {min_required}")
-
-    with st.form("admit_form"):
-        name = st.text_input("Student Full Name")
-        phone = st.text_input("Parent Phone 254...")
-        adm_no = st.text_input("Admission No e.g JLC/2025/001")
-        paid_now = st.number_input("Amount Being Paid Now", min_value=0)
-        submit = st.form_submit_button("Admit Student")
-        if submit:
-            if paid_now < min_required:
-                st.error(f"FAILED! Paid {paid_now} is less than minimum {min_required}. Cannot admit.")
-            else:
-                balance = total_fee - paid_now
+with tab1:
+        st.subheader("📝 Admit New Student - JAWABU LEARNING CENTER")
+        
+        def generate_admission_no():
+            try:
                 with engine.connect() as conn:
-                    conn.execute(text("""
-                        INSERT INTO students (admission_no, full_name, class_group, term, parent_phone, total_fee, paid_amount, balance, status)
-                        VALUES (:a,:n,:c,:t,:p,:tf,:pa,:b,'admitted')
-                    """), {"a":adm_no,"n":name,"c":class_choice,"t":term_choice,"p":phone,"tf":total_fee,"pa":paid_now,"b":balance})
-                    conn.execute(text("INSERT INTO payments (student_id, amount, phone, status) VALUES (:s,:amt,:ph,'confirmed')"), {"s":adm_no,"amt":paid_now,"ph":phone})
-                    conn.commit()
-                st.success(f"Admitted! {name} | Admission: {adm_no} | Balance: KES {balance}")
+                    last = conn.execute(text("SELECT admission_no FROM students ORDER BY id DESC LIMIT 1")).scalar()
+                    if last and "/" in last:
+                        try:
+                            num = int(last.split("/")[-1]) + 1
+                        except:
+                            count = conn.execute(text("SELECT COUNT(*) FROM students")).scalar()
+                            num = (count or 0) + 1
+                    else:
+                        count = conn.execute(text("SELECT COUNT(*) FROM students")).scalar()
+                        num = (count or 0) + 1
+                    year = datetime.datetime.now().year
+                    return f"JLC/{year}/{num:03d}"
+            except:
+                year = datetime.datetime.now().year
+                return f"JLC/{year}/001"
 
-    with engine.connect() as conn:
-        stud_df = pd.read_sql(text("SELECT * FROM students ORDER BY created_at DESC"), conn)
-    st.dataframe(stud_df, use_container_width=True)
+        auto_adm_no = generate_admission_no()
+        st.success(f"🔢 Next Admission No (Auto): **{auto_adm_no}**")
+
+        colA, colB = st.columns(2)
+        with colA:
+            full_name = st.text_input("Student Full Name *")
+            gender = st.selectbox("Gender *", ["Male", "Female"])
+            dob = st.date_input("Date of Birth *", min_value=datetime.date(2015,1,1), max_value=datetime.date(2022,12,31))
+            class_group = st.selectbox("Class Group *", ["Playgroup","PP1 & PP2","Grade 1 to 6","Grade 7 to 9"])
+        with colB:
+            term = st.selectbox("Term *", ["Term 1","Term 2","Term 3"])
+            parent_name = st.text_input("Parent / Guardian Name *")
+            parent_phone = st.text_input("Parent Phone * (07... or 254...)")
+            amount_now = st.number_input("Amount Being Paid Now (KES) *", min_value=0, value=0)
+
+        total_fee = 0
+        try:
+            with engine.connect() as conn:
+                total_fee = conn.execute(text("SELECT amount FROM fee_structure WHERE class_group=:c AND term=:t"), 
+                                         {"c":class_group,"t":term}).scalar() or 0
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Total Fee", f"KES {total_fee}")
+            c2.metric("50% Required", f"KES {int(total_fee*0.5)}")
+            c3.metric("Balance After", f"KES {total_fee - amount_now}", delta=f"-{amount_now} paid", delta_color="inverse")
+            
+            if total_fee > 0 and amount_now > 0:
+                bal_after = total_fee - amount_now
+                if bal_after == 0:
+                    st.success("✅ Full payment! Balance = 0")
+                else:
+                    st.warning(f"⚠️ Balance remaining: KES {bal_after}")
+        except:
+            pass
+
+        if st.button("✅ Admit Student", type="primary", use_container_width=True):
+            if not full_name or not parent_name or not parent_phone:
+                st.error("Please fill all * fields")
+            elif total_fee == 0:
+                st.error("Fee structure not set for this Class & Term. Ask Accountant to set it.")
+            elif amount_now < (total_fee * 0.5):
+                st.error(f"❌ 50% Rule: Must pay at least KES {int(total_fee*0.5)}")
+            else:
+                try:
+                    with engine.connect() as conn:
+                        conn.execute(text("""
+                            INSERT INTO students (admission_no, full_name, gender, dob, class_group, term, parent_name, parent_phone, total_fee, paid_amount, balance, status)
+                            VALUES (:adm, :name, :gender, :dob, :cg, :term, :pname, :phone, :tf, :paid, :bal, 'active')
+                        """), {
+                            "adm": auto_adm_no, "name": full_name, "gender": gender, "dob": dob,
+                            "cg": class_group, "term": term, "pname": parent_name, "phone": parent_phone,
+                            "tf": total_fee, "paid": amount_now, "bal": total_fee - amount_now
+                        })
+                        conn.execute(text("""
+                            INSERT INTO payments (student_id, amount, phone, status)
+                            VALUES (:s, :a, :p, 'confirmed')
+                        """), {"s": auto_adm_no, "a": amount_now, "p": parent_phone})
+                        conn.commit()
+                    
+                    log_action(user, "STUDENT_ADMITTED", auto_adm_no, f"{full_name} ({gender} {dob}) Parent {parent_name}")
+                    st.success(f"✅ Admitted! {full_name} - {auto_adm_no} - Balance KES {total_fee-amount_now}")
+                    st.balloons()
+                except Exception as e:
+                    st.error(f"Failed: {e}")
+
+        st.divider()
+        st.subheader("📋 All Students - Balance Column (Red = Has Not Paid Full)")
+        try:
+            with engine.connect() as conn:
+                df = pd.read_sql(text("""
+                    SELECT admission_no as ADM, full_name as Student, gender as Gender, dob as DOB,
+                           class_group as Class, parent_name as Parent_Name, parent_phone as Phone,
+                           total_fee as Total, paid_amount as Paid, balance as BALANCE
+                    FROM students ORDER BY id DESC
+                """), conn)
+            
+            if not df.empty:
+                def highlight_balance(val):
+                    return 'background-color: #ffcccc; color: black; font-weight: bold' if val > 0 else 'background-color: #ccffcc; color: black'
+                
+                st.dataframe(df.style.applymap(highlight_balance, subset=['BALANCE']), use_container_width=True)
+                
+                debtors = df[df['BALANCE'] > 0]
+                if not debtors.empty:
+                    st.warning(f"⚠️ {len(debtors)} students NOT cleared - Total KES {debtors['BALANCE'].sum()} outstanding")
+                    st.dataframe(debtors, use_container_width=True)
+                    csv = debtors.to_csv(index=False).encode('utf-8')
+                    st.download_button("📥 Download Debtors (Parent Name + Balance)", csv, "debtors_jlc.csv", "text/csv")
+                else:
+                    st.success("All cleared! ✅")
+            else:
+                st.info("No students yet - Admit first student above")
+        except Exception as e:
+            st.error(f"Load error: {e}")
 
 # ---------- TEACHER - CBC ----------
 else:
